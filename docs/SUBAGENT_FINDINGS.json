@@ -1,0 +1,128 @@
+[
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-001",
+    "severity": "critical",
+    "title": "JWT signing key defaults to empty string — forged tokens possible",
+    "file": "app/auth.py",
+    "line": 33,
+    "detail": "_SIGNING_KEY_RAW is read from os.environ.get(\"APP_SIGNING_KEY\", \"\"). When APP_SIGNING_KEY is unset the key is an empty string. Prior to the RuntimeError guard (added as 'FIND-001 fix') the application silently accepted an empty key, allowing any attacker to forge JWT tokens signed with an empty secret."
+  },
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-002",
+    "severity": "high",
+    "title": "Missing ownership check on DELETE /products/{product_id} — IDOR",
+    "file": "app/products.py",
+    "line": 71,
+    "detail": "The delete_product endpoint fetches the product row and executes DELETE without verifying that current_user[\"id\"] == row[\"owner_id\"]. Any authenticated user can delete any other user's product. Comment 'FIND-002 fix: enforce ownership' confirms the original code lacked this guard."
+  },
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-003",
+    "severity": "medium",
+    "title": "JWT sub claim not validated as integer — potential 500 error",
+    "file": "app/auth.py",
+    "line": 133,
+    "detail": "get_current_user reads payload.get(\"sub\") and passes it to int(sub). A crafted JWT with sub=null or sub=\"1 OR 1=1\" causes ValueError which propagates as HTTP 500 unless the try/except guard (FIND-007 fix) is in place."
+  },
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-004",
+    "severity": "high",
+    "title": "No rate limiting on /auth/login and /auth/register — brute-force risk",
+    "file": "app/auth.py",
+    "line": 172,
+    "detail": "Both login and register accept unlimited requests per IP. An attacker can brute-force passwords or perform credential stuffing at full request rate. The _check_rate_limit() function is defined (FIND-006 fix) but must be verified to be called at the top of each handler."
+  },
+  {
+    "agent": "Input Validation Agent",
+    "id": "VAL-001",
+    "severity": "critical",
+    "title": "No password complexity policy on UserRegister — trivial passwords accepted",
+    "file": "app/models.py",
+    "line": 16,
+    "detail": "UserRegister.password only requires min_length=8. No field_validator enforces uppercase, lowercase, digit, or special character. A password like 'aaaaaaaa' is accepted. The password_complexity validator shown in comments does not cover special characters and is not complete."
+  },
+  {
+    "agent": "Input Validation Agent",
+    "id": "VAL-002",
+    "severity": "high",
+    "title": "No input length limits on UserLogin fields — bcrypt DoS via oversized password",
+    "file": "app/models.py",
+    "line": 31,
+    "detail": "UserLogin.username and UserLogin.password have no max_length constraint. bcrypt silently truncates beyond 72 bytes but still invokes the full hashing round, enabling a CPU-exhaustion DoS by submitting megabyte-sized password payloads. UserRegister already has max_length=128 — UserLogin must match."
+  },
+  {
+    "agent": "Input Validation Agent",
+    "id": "VAL-003",
+    "severity": "critical",
+    "title": "SQL injection via string interpolation in GET /users/{user_id} (planned VULN-002)",
+    "file": "app/users.py",
+    "line": 53,
+    "detail": "The file header explicitly notes that Sub-Task 7 will replace the current parameterised query with unsafe string interpolation (f\"... WHERE id = {user_id}\"). This planned change introduces a SQL injection vulnerability enabling full database enumeration including hashed passwords."
+  },
+  {
+    "agent": "Database Security Agent",
+    "id": "DB-001",
+    "severity": "critical",
+    "title": "Planned SQL injection in users lookup via string interpolation",
+    "file": "app/users.py",
+    "line": 53,
+    "detail": "The NOTE comment confirms that a future sub-task will introduce f-string interpolation of user_id into a raw SQL query. This is a textbook SQL injection vector. SQLite3's row_factory would still return full row data for injected union queries extracting all users and passwords."
+  },
+  {
+    "agent": "Database Security Agent",
+    "id": "DB-002",
+    "severity": "low",
+    "title": "SQLite database file present at repository root — may be committed to VCS",
+    "file": "securegate.db",
+    "line": null,
+    "detail": "A securegate.db file exists at the repository root. If tracked by git, it may contain seeded user credentials (usernames, emails, bcrypt hashes). Even bcrypt hashes in version control create an offline cracking opportunity. Verify .gitignore excludes *.db files and run git rm --cached securegate.db."
+  },
+  {
+    "agent": "Secrets & Configuration Agent",
+    "id": "SEC-001",
+    "severity": "critical",
+    "title": "JWT signing key defaults to empty string when APP_SIGNING_KEY is unset",
+    "file": "app/auth.py",
+    "line": 33,
+    "detail": "Without APP_SIGNING_KEY in the environment the default is an empty string. The RuntimeError guard was added post-hoc ('FIND-001 fix'). Any deployment made before the guard was introduced was vulnerable to JWT forgery. Ensure the guard is present and tested in CI."
+  },
+  {
+    "agent": "Secrets & Configuration Agent",
+    "id": "SEC-002",
+    "severity": "medium",
+    "title": "BOB_API_KEY absence detected lazily at call time, not at startup",
+    "file": "app/bob_runner.py",
+    "line": 116,
+    "detail": "run_bob() checks os.environ.get(\"BOB_API_KEY\") only when invoked from a background thread. Missing key produces silent success=False rather than a fail-fast startup error. CI pipelines omitting the key will silently produce misleading results."
+  },
+  {
+    "agent": "Secrets & Configuration Agent",
+    "id": "SEC-003",
+    "severity": "low",
+    "title": "JWT token lifetime defaults to 120 minutes — longer than OWASP recommendation",
+    "file": "app/auth.py",
+    "line": 54,
+    "detail": "_TOKEN_MINUTES defaults to 120 (2 hours). OWASP recommends 15–30 minutes for access tokens. A stolen token remains valid for up to 2 hours with no revocation mechanism."
+  },
+  {
+    "agent": "Test Coverage Agent",
+    "id": "TEST-001",
+    "severity": "medium",
+    "title": "No test exercises rate-limit enforcement (HTTP 429) on auth endpoints",
+    "file": "tests/test_auth.py",
+    "line": null,
+    "detail": "The test suite resets _rate_buckets before every test via the _reset_rate_limiter autouse fixture. No test deliberately exhausts the rate limit to verify that a 429 is returned. The rate-limiting logic is therefore untested in the passing test suite."
+  },
+  {
+    "agent": "Test Coverage Agent",
+    "id": "TEST-002",
+    "severity": "medium",
+    "title": "Over-broad status-code assertions mask auth-enforcement regressions",
+    "file": "tests/test_auth.py",
+    "line": 122,
+    "detail": "test_token_grants_access_to_protected_route asserts status_code in (200, 404) — a 404 means the route is missing, not that auth works. test_invalid_token_rejected accepts (401, 403, 404) where a 404 would indicate a routing misconfiguration rather than proper auth rejection. Both assertions should be tightened."
+  }
+]
